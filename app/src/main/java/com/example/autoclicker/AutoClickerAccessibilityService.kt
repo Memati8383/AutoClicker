@@ -4,9 +4,13 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Path
-import android.os.Handler
-import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 enum class StopCondition { INDEFINITE, TIME, COUNT }
 enum class TimeUnit { MILLISECONDS, SECONDS, MINUTES }
@@ -29,22 +33,12 @@ class AutoClickerAccessibilityService : AccessibilityService() {
         var clickCount = 0
         var clickX: Float = 500f
         var clickY: Float = 500f
-        private var startTime = 0L
-        private var stopTime = 0L
+        var startTime = 0L
+        var stopTime = 0L
     }
 
-    private val handler = Handler(Looper.getMainLooper())
-    private val clickRunnable = object : Runnable {
-        override fun run() {
-            if (!isRunning) return
-            performNextClick()
-            if (shouldStop()) {
-                stopClicking()
-                return
-            }
-            handler.postDelayed(this, clickIntervalMs)
-        }
-    }
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private var clickJob: Job? = null
 
     override fun onServiceConnected() {
         instance = this
@@ -56,6 +50,7 @@ class AutoClickerAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         stopClicking()
+        scope.cancel()
         instance = null
         return super.onUnbind(intent)
     }
@@ -68,12 +63,22 @@ class AutoClickerAccessibilityService : AccessibilityService() {
             stopTime = startTime + convertToMs(stopValue, stopUnit)
         }
         isRunning = true
-        handler.post(clickRunnable)
+        clickJob = scope.launch {
+            while (isRunning) {
+                performNextClick()
+                if (shouldStop()) {
+                    stopClicking()
+                    break
+                }
+                delay(clickIntervalMs)
+            }
+        }
     }
 
     fun stopClicking() {
         isRunning = false
-        handler.removeCallbacks(clickRunnable)
+        clickJob?.cancel()
+        clickJob = null
     }
 
     private fun shouldStop(): Boolean {

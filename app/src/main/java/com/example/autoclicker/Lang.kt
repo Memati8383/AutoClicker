@@ -87,6 +87,24 @@ object Lang {
             "source_code" to "Kaynak Kodları",
             "share" to "Uygulamayı Paylaş",
             "share_text" to "Auto Clicker - Otomatik tıklama uygulaması! 🖱️\n🔗 https://github.com/Memati8383/AutoClicker",
+            "menu" to "Menü",
+            "back" to "Geri",
+            "start" to "Başlat",
+            "stop" to "Durdur",
+            "add_target" to "Hedef Ekle",
+            "remove_target" to "Hedef Sil",
+            "close" to "Kapat",
+            "settings_presets" to "Hızlı Seçim",
+            "settings_remaining" to "Kalan",
+            "remaining_time" to "kalan süre",
+            "remaining_clicks" to "kalan tık",
+            "preset_100ms" to "0.1sn",
+            "preset_500ms" to "0.5sn",
+            "preset_1s" to "1sn",
+            "preset_2s" to "2sn",
+            "preset_5s" to "5sn",
+            "clicking_active" to "Tıklanıyor...",
+            "clicking_idle" to "Hazır",
         ),
         "en" to mapOf(
             "home" to "Home",
@@ -166,6 +184,24 @@ object Lang {
             "source_code" to "Source Code",
             "share" to "Share App",
             "share_text" to "Auto Clicker - Automated click tool! 🖱️\n🔗 https://github.com/Memati8383/AutoClicker",
+            "menu" to "Menu",
+            "back" to "Back",
+            "start" to "Start",
+            "stop" to "Stop",
+            "add_target" to "Add Target",
+            "remove_target" to "Remove Target",
+            "close" to "Close",
+            "settings_presets" to "Quick Select",
+            "settings_remaining" to "Remaining",
+            "remaining_time" to "remaining",
+            "remaining_clicks" to "remaining clicks",
+            "preset_100ms" to "0.1s",
+            "preset_500ms" to "0.5s",
+            "preset_1s" to "1s",
+            "preset_2s" to "2s",
+            "preset_5s" to "5s",
+            "clicking_active" to "Clicking...",
+            "clicking_idle" to "Ready",
         )
     )
 
@@ -187,4 +223,13 @@ object Lang {
     fun clickCount(n: Int) = if (current == "tr") "$n tık" else "$n clicks"
 
     fun targetCount(n: Int) = "$n ${get("target")}"
+
+    fun remainingTimeDisplay(ms: Long): String {
+        val totalSec = (ms + 999) / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        return if (min > 0) "${min}m ${sec}s ${get("remaining_time")}" else "${sec}s ${get("remaining_time")}"
+    }
+
+    fun remainingClicksDisplay(n: Long): String = "$n ${get("remaining_clicks")}"
 }

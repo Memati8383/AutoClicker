@@ -16,6 +16,7 @@ import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import androidx.core.app.NotificationCompat
+import androidx.core.content.getSystemService
 
 class FloatingOverlayService : Service() {
 
@@ -48,7 +49,7 @@ class FloatingOverlayService : Service() {
     override fun onDestroy() {
         removeAllTargetMarkers()
         rootView?.let { try { windowManager.removeView(it) } catch (_: Exception) {} }
-        AutoClickerViewModel._isOverlayActive.value = false
+        AppState.isOverlayActive = false
         super.onDestroy()
     }
 
@@ -57,8 +58,6 @@ class FloatingOverlayService : Service() {
     // ──────────────────────────────────────────────
 
     private fun showOverlay() {
-        val isMulti = AutoClickerViewModel._isMultiTarget.value
-
         rootView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(6), dp(8), dp(8))
@@ -77,53 +76,86 @@ class FloatingOverlayService : Service() {
                 Toast.makeText(this, Lang.get("service_disconnected"), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-                if (AutoClickerAccessibilityService.isRunning) {
-                    s.stopClicking()
-                    AutoClickerViewModel._isClicking.value = false
-                    panelDraggable = true
-                    showTargetMarkers()
-                    Toast.makeText(this, Lang.get("service_stopped"), Toast.LENGTH_SHORT).show()
-                } else {
-                    val raw = AutoClickerViewModel._intervalValue.value
-                    val unit = AutoClickerViewModel._intervalUnit.value
-                    AutoClickerAccessibilityService.clickIntervalMs = when (unit) {
-                        TimeUnit.MILLISECONDS -> raw
-                        TimeUnit.SECONDS -> raw * 1000
-                        TimeUnit.MINUTES -> raw * 60000
-                    }
-                    AutoClickerAccessibilityService.isMultiTarget = isMulti
-                    AutoClickerAccessibilityService.targets = AutoClickerViewModel._targets.value.toMutableList()
-                    AutoClickerAccessibilityService.stopCondition = AutoClickerViewModel._stopCondition.value
-                    AutoClickerAccessibilityService.stopValue = AutoClickerViewModel._stopValue.value
-                    AutoClickerAccessibilityService.stopUnit = AutoClickerViewModel._stopUnit.value
-                    panelDraggable = false
-                    removeAllTargetMarkers()
+            if (AutoClickerAccessibilityService.isRunning) {
+                s.stopClicking()
+                AppState.isClicking = false
+                panelDraggable = true
+                showTargetMarkers()
+                Toast.makeText(this, Lang.get("service_stopped"), Toast.LENGTH_SHORT).show()
+            } else {
+                val raw = AppState.intervalValue
+                val unit = AppState.intervalUnit
+                AutoClickerAccessibilityService.clickIntervalMs = when (unit) {
+                    TimeUnit.MILLISECONDS -> raw
+                    TimeUnit.SECONDS -> raw * 1000
+                    TimeUnit.MINUTES -> raw * 60000
+                }
+                AutoClickerAccessibilityService.isMultiTarget = AppState.isMultiTarget
+                AutoClickerAccessibilityService.targets = AppState.targets.toMutableList()
+                AutoClickerAccessibilityService.stopCondition = AppState.stopCondition
+                AutoClickerAccessibilityService.stopValue = AppState.stopValue
+                AutoClickerAccessibilityService.stopUnit = AppState.stopUnit
+                panelDraggable = false
+                removeAllTargetMarkers()
                 Toast.makeText(this, Lang.get("service_started"), Toast.LENGTH_SHORT).show()
                 s.startClicking()
-                AutoClickerViewModel._isClicking.value = true
+                AppState.isClicking = true
             }
         }
         rootView!!.addView(startBtn)
 
-        if (isMulti) {
-            rootView!!.addView(circleBtn("+", Color.WHITE, c(0x37, 0x5F, 0x5F), btnSize) {
-                AutoClickerViewModel.addTarget()
-                showTargetMarkers()
-                updateTargetCount()
-            })
-            rootView!!.addView(circleBtn("−", c(0xEF, 0x9A, 0x9A), c(0x4F, 0x3F, 0x3F), btnSize) {
-                AutoClickerViewModel.removeLastTarget()
-                showTargetMarkers()
-                updateTargetCount()
-            })
+        // Multi-target buttons - add/remove targets
+        val addBtn = circleBtn("+", Color.WHITE, c(0x37, 0x5F, 0x5F), btnSize) {
+            AutoClickerViewModel.addTarget()
+            showTargetMarkers()
+            updateTargetCount()
         }
+        val removeBtn = circleBtn("−", c(0xEF, 0x9A, 0x9A), c(0x4F, 0x3F, 0x3F), btnSize) {
+            AutoClickerViewModel.removeLastTarget()
+            showTargetMarkers()
+            updateTargetCount()
+        }
+        // Dynamic visibility based on mode
+        fun updateMultiBtns() {
+            val multi = AppState.isMultiTarget
+            addBtn.visibility = if (multi) View.VISIBLE else View.GONE
+            removeBtn.visibility = if (multi) View.VISIBLE else View.GONE
+            targetCountText?.visibility = if (multi) View.VISIBLE else View.GONE
+        }
+        rootView!!.addView(addBtn)
+        rootView!!.addView(removeBtn)
+        updateMultiBtns()
 
         rootView!!.addView(circleBtn("⚙", Color.WHITE, c(0x25, 0x65, 0xC0), btnSize) { enterSettingsMode() })
         rootView!!.addView(circleBtn("✕", c(0xEF, 0x9A, 0x9A), c(0x4E, 0x2E, 0x2E), btnSize) { stopSelf() })
 
-        // Click counter
+        // Status row - click count + remaining info
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
         val clickCountText = TextView(this).apply {
             text = Lang.clickCount(0)
+            setTextColor(c(0x90, 0xA4, 0xAE))
+            textSize = 10f
+        }
+        statusRow.addView(clickCountText)
+        val remainingText = TextView(this).apply {
+            text = ""
+            setTextColor(c(0xFF, 0xBB, 0x44))
+            textSize = 10f
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { leftMargin = dp(8) }
+        }
+        statusRow.addView(remainingText)
+        rootView!!.addView(statusRow)
+
+        targetCountText = TextView(this).apply {
+            text = Lang.targetCount(AppState.targets.size)
             setTextColor(c(0x90, 0xA4, 0xAE))
             textSize = 10f
             gravity = Gravity.CENTER_HORIZONTAL
@@ -131,20 +163,8 @@ class FloatingOverlayService : Service() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(2) }
         }
-        rootView!!.addView(clickCountText)
-
-        if (isMulti) {
-            targetCountText = TextView(this).apply {
-                text = Lang.targetCount(AutoClickerViewModel._targets.value.size)
-                setTextColor(c(0x90, 0xA4, 0xAE))
-                textSize = 10f
-                gravity = Gravity.CENTER_HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(2) }
-            }
-            rootView!!.addView(targetCountText)
-        }
+        rootView!!.addView(targetCountText)
+        targetCountText?.visibility = if (AppState.isMultiTarget) View.VISIBLE else View.GONE
 
         rootView!!.isClickable = true
 
@@ -172,13 +192,33 @@ class FloatingOverlayService : Service() {
 
         startBtn.post(object : Runnable {
             override fun run() {
-                if (AutoClickerAccessibilityService.isRunning) {
+                val running = AutoClickerAccessibilityService.isRunning
+                if (running) {
                     startBtn.text = "⏹"
                     startBtn.background = roundedBg(c(0xE5, 0x39, 0x35), dp(10))
-                    clickCountText.text = Lang.clickCount(AutoClickerAccessibilityService.clickCount)
+                    val count = AutoClickerAccessibilityService.clickCount
+                    clickCountText.text = Lang.clickCount(count)
+                    // Show remaining info
+                    when (AppState.stopCondition) {
+                        StopCondition.TIME -> {
+                            val elapsed = System.currentTimeMillis() - AutoClickerAccessibilityService.startTime
+                            val total = AutoClickerAccessibilityService.stopTime - AutoClickerAccessibilityService.startTime
+                            val remaining = (total - elapsed).coerceAtLeast(0)
+                            remainingText.text = Lang.remainingTimeDisplay(remaining)
+                        }
+                        StopCondition.COUNT -> {
+                            val rem = (AppState.stopValue - count).coerceAtLeast(0)
+                            remainingText.text = Lang.remainingClicksDisplay(rem)
+                        }
+                        StopCondition.INDEFINITE -> {
+                            remainingText.text = ""
+                        }
+                    }
                 } else {
                     startBtn.text = "▶"
                     startBtn.background = roundedBg(c(0x43, 0xA0, 0x47), dp(10))
+                    clickCountText.text = Lang.clickCount(AutoClickerAccessibilityService.clickCount)
+                    remainingText.text = ""
                 }
                 startBtn.postDelayed(this, 500)
             }
@@ -266,18 +306,18 @@ class FloatingOverlayService : Service() {
                         windowManager.updateViewLayout(marker, lp)
                     }
                     val cx = newX + half; val cy = newY + half
-                    if (AutoClickerViewModel._isMultiTarget.value) {
-                        val list = AutoClickerViewModel._targets.value.toMutableList()
+                    if (AppState.isMultiTarget) {
+                        val list = AppState.targets.toMutableList()
                         if (index < list.size) {
                             list[index] = ClickTarget(cx.toFloat(), cy.toFloat())
-                            AutoClickerViewModel._targets.value = list
+                            AppState.targets = list
                             AutoClickerAccessibilityService.targets = list
                         }
                     } else {
                         AutoClickerAccessibilityService.clickX = cx.toFloat()
                         AutoClickerAccessibilityService.clickY = cy.toFloat()
-                        AutoClickerViewModel._clickX.value = cx.toString()
-                        AutoClickerViewModel._clickY.value = cy.toString()
+                        AppState.clickX = cx.toString()
+                        AppState.clickY = cy.toString()
                     }
                     true
                 }
@@ -292,8 +332,8 @@ class FloatingOverlayService : Service() {
     private fun showTargetMarkers() {
         removeAllTargetMarkers()
 
-        val isMulti = AutoClickerViewModel._isMultiTarget.value
-        val targets = if (isMulti) AutoClickerViewModel._targets.value
+        val isMulti = AppState.isMultiTarget
+        val targets = if (isMulti) AppState.targets
         else listOf(ClickTarget(
             AutoClickerAccessibilityService.clickX, AutoClickerAccessibilityService.clickY
         ))
@@ -331,7 +371,7 @@ class FloatingOverlayService : Service() {
     }
 
     private fun updateTargetCount() {
-        targetCountText?.text = Lang.targetCount(AutoClickerViewModel._targets.value.size)
+        targetCountText?.text = Lang.targetCount(AppState.targets.size)
     }
 
     // ──────────────────────────────────────────────
@@ -343,7 +383,7 @@ class FloatingOverlayService : Service() {
         modalActive = true
 
         val ctx = this
-        val isMulti = AutoClickerViewModel._isMultiTarget.value
+        val isMulti = AppState.isMultiTarget
         val screenW = resources.displayMetrics.widthPixels
         val cardW = minOf(dp(340), (screenW * 0.85f).toInt())
 
@@ -398,7 +438,7 @@ class FloatingOverlayService : Service() {
             setPadding(dp(14), dp(10), dp(14), dp(10))
         }
         val intervalEt = EditText(ctx).apply {
-            setText(AutoClickerViewModel._intervalValue.value.toString())
+            setText(AppState.intervalValue.toString())
             setTextColor(Color.WHITE); textSize = 15f
             inputType = InputType.TYPE_CLASS_NUMBER
             background = null
@@ -409,11 +449,11 @@ class FloatingOverlayService : Service() {
         }
         intervalCard.addView(intervalEt)
         intervalCard.addView(unitToggleBtn(
-            when (AutoClickerViewModel._intervalUnit.value) {
+            when (AppState.intervalUnit) {
                 TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk"
             }
         ) {
-            val cur = AutoClickerViewModel._intervalUnit.value
+            val cur = AppState.intervalUnit
             val next = when (cur) {
                 TimeUnit.MILLISECONDS -> TimeUnit.SECONDS; TimeUnit.SECONDS -> TimeUnit.MINUTES; TimeUnit.MINUTES -> TimeUnit.MILLISECONDS
             }
@@ -421,6 +461,33 @@ class FloatingOverlayService : Service() {
             it.text = when (next) { TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk" }
         })
         content.addView(intervalCard)
+
+        // ── Interval Presets ──
+        val presets = listOf(
+            100L to Lang.get("preset_100ms"),
+            500L to Lang.get("preset_500ms"),
+            1000L to Lang.get("preset_1s"),
+            2000L to Lang.get("preset_2s"),
+            5000L to Lang.get("preset_5s")
+        )
+        val presetRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) }
+        }
+        presets.forEach { (ms, label) ->
+            presetRow.addView(TextView(ctx).apply {
+                text = label; setTextColor(Color.WHITE); textSize = 12f; gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(0, dp(32), 1f).apply { rightMargin = dp(4) }
+                background = roundedBg(c(0x37, 0x4F, 0x4F), dp(8))
+                setOnClickListener {
+                    AutoClickerViewModel.setIntervalValue(ms)
+                    AutoClickerViewModel.setIntervalUnit(TimeUnit.MILLISECONDS)
+                    intervalEt.setText(ms.toString())
+                }
+            })
+        }
+        content.addView(presetRow)
+
         intervalEt.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun afterTextChanged(s: Editable?) {}
@@ -443,14 +510,14 @@ class FloatingOverlayService : Service() {
             for (i in 0 until stopCard.childCount) {
                 val row = stopCard.getChildAt(i) as? LinearLayout ?: continue
                 val rb = row.getChildAt(0) as? RadioButton ?: continue
-                rb.isChecked = when (idx) { 0 -> AutoClickerViewModel._stopCondition.value == StopCondition.INDEFINITE; 1 -> AutoClickerViewModel._stopCondition.value == StopCondition.TIME; 2 -> AutoClickerViewModel._stopCondition.value == StopCondition.COUNT; else -> false }
+                rb.isChecked = when (idx) { 0 -> AppState.stopCondition == StopCondition.INDEFINITE; 1 -> AppState.stopCondition == StopCondition.TIME; 2 -> AppState.stopCondition == StopCondition.COUNT; else -> false }
                 row.background = if (rb.isChecked) roundedBg(c(0x15, 0x65, 0xC0, 60), dp(10)) else null
                 idx++
             }
         }
 
         // Indefinite
-        stopCard.addView(stopRow(Lang.get("settings_indefinite"), AutoClickerViewModel._stopCondition.value == StopCondition.INDEFINITE) {
+        stopCard.addView(stopRow(Lang.get("settings_indefinite"), AppState.stopCondition == StopCondition.INDEFINITE) {
             AutoClickerViewModel.setStopCondition(StopCondition.INDEFINITE); refreshStopCard()
         })
 
@@ -461,9 +528,9 @@ class FloatingOverlayService : Service() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
             setOnClickListener { AutoClickerViewModel.setStopCondition(StopCondition.TIME); refreshStopCard() }
         }
-        timeRow.addView(RadioButton(ctx).apply { isChecked = AutoClickerViewModel._stopCondition.value == StopCondition.TIME; isEnabled = false })
+        timeRow.addView(RadioButton(ctx).apply { isChecked = AppState.stopCondition == StopCondition.TIME; isEnabled = false })
         timeRow.addView(TextView(ctx).apply { text = "${Lang.get("settings_time")}: "; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER_VERTICAL })
-        val timeEt = numberEditText(AutoClickerViewModel._stopValue.value.toString(), dp(64))
+        val timeEt = numberEditText(AppState.stopValue.toString(), dp(64))
         timeEt.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun afterTextChanged(s: Editable?) {}
@@ -471,14 +538,14 @@ class FloatingOverlayService : Service() {
         })
         timeRow.addView(timeEt)
         timeRow.addView(unitToggleBtn(
-            when (AutoClickerViewModel._stopUnit.value) { TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk" }
+            when (AppState.stopUnit) { TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk" }
         ) {
-            val cur = AutoClickerViewModel._stopUnit.value
+            val cur = AppState.stopUnit
             val next = when (cur) { TimeUnit.MILLISECONDS -> TimeUnit.SECONDS; TimeUnit.SECONDS -> TimeUnit.MINUTES; TimeUnit.MINUTES -> TimeUnit.MILLISECONDS }
             AutoClickerViewModel.setStopUnit(next); it.text = when (next) { TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk" }
             AutoClickerViewModel.setStopCondition(StopCondition.TIME); refreshStopCard()
         })
-        if (AutoClickerViewModel._stopCondition.value == StopCondition.TIME) timeRow.background = roundedBg(c(0x15, 0x65, 0xC0, 60), dp(10))
+        if (AppState.stopCondition == StopCondition.TIME) timeRow.background = roundedBg(c(0x15, 0x65, 0xC0, 60), dp(10))
         stopCard.addView(timeRow)
 
         // Count
@@ -488,16 +555,16 @@ class FloatingOverlayService : Service() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
             setOnClickListener { AutoClickerViewModel.setStopCondition(StopCondition.COUNT); refreshStopCard() }
         }
-        countRow.addView(RadioButton(ctx).apply { isChecked = AutoClickerViewModel._stopCondition.value == StopCondition.COUNT; isEnabled = false })
+        countRow.addView(RadioButton(ctx).apply { isChecked = AppState.stopCondition == StopCondition.COUNT; isEnabled = false })
         countRow.addView(TextView(ctx).apply { text = "${Lang.get("settings_clicks")}: "; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER_VERTICAL })
-        val countEt = numberEditText(AutoClickerViewModel._stopValue.value.toString(), dp(72))
+        val countEt = numberEditText(AppState.stopValue.toString(), dp(72))
         countEt.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun afterTextChanged(s: Editable?) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { s.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) } }
         })
         countRow.addView(countEt)
-        if (AutoClickerViewModel._stopCondition.value == StopCondition.COUNT) countRow.background = roundedBg(c(0x15, 0x65, 0xC0, 60), dp(10))
+        if (AppState.stopCondition == StopCondition.COUNT) countRow.background = roundedBg(c(0x15, 0x65, 0xC0, 60), dp(10))
         stopCard.addView(countRow)
 
         content.addView(stopCard)
@@ -517,15 +584,15 @@ class FloatingOverlayService : Service() {
             }
             posRow.addView(TextView(ctx).apply { text = "X"; setTextColor(c(0x90, 0xA4, 0xAE)); textSize = 13f; gravity = Gravity.CENTER_VERTICAL
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) } })
-            val xEt = numberEditText(AutoClickerViewModel._clickX.value, dp(80))
+            val xEt = numberEditText(AppState.clickX, dp(80))
             posRow.addView(xEt)
             posRow.addView(TextView(ctx).apply { text = "Y"; setTextColor(c(0x90, 0xA4, 0xAE)); textSize = 13f; gravity = Gravity.CENTER_VERTICAL
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(14); rightMargin = dp(8) } })
-            val yEt = numberEditText(AutoClickerViewModel._clickY.value, dp(80))
+            val yEt = numberEditText(AppState.clickY, dp(80))
             posRow.addView(yEt)
             posCard.addView(posRow)
-            xEt.setOnEditorActionListener { _, _, _ -> xEt.text.toString().toFloatOrNull()?.let { AutoClickerAccessibilityService.clickX = it; AutoClickerViewModel._clickX.value = xEt.text.toString() }; false }
-            yEt.setOnEditorActionListener { _, _, _ -> yEt.text.toString().toFloatOrNull()?.let { AutoClickerAccessibilityService.clickY = it; AutoClickerViewModel._clickY.value = yEt.text.toString() }; false }
+            xEt.setOnEditorActionListener { _, _, _ -> xEt.text.toString().toFloatOrNull()?.let { AutoClickerAccessibilityService.clickX = it; AppState.clickX = xEt.text.toString() }; false }
+            yEt.setOnEditorActionListener { _, _, _ -> yEt.text.toString().toFloatOrNull()?.let { AutoClickerAccessibilityService.clickY = it; AppState.clickY = yEt.text.toString() }; false }
             posCard.addView(TextView(ctx).apply {
                 text = Lang.get("settings_drag")
                 setTextColor(c(0x90, 0xA4, 0xAE)); textSize = 11f
@@ -535,6 +602,32 @@ class FloatingOverlayService : Service() {
 
         scrollContent.addView(content)
         card.addView(scrollContent)
+
+        // Swipe-to-dismiss on card
+        card.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragStartX = event.rawX
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - dragStartX
+                    if (dx > 0) card.translationX = dx * 0.5f
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = event.rawX - dragStartX
+                    if (dx > dp(80).toFloat()) {
+                        card.animate().translationX(card.width.toFloat()).alpha(0f).setDuration(200)
+                            .withEndAction { dismissModal(modalRoot) }.start()
+                    } else {
+                        card.animate().translationX(0f).alpha(1f).setDuration(200).start()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
 
         // Center card in backdrop
         val cardLp = FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -658,7 +751,19 @@ class FloatingOverlayService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             background = roundedBg(bgColor, size / 2)
             elevation = dp(3).toFloat()
-            if (onClick != null) setOnClickListener { onClick() }
+            contentDescription = when (text) {
+                "▶" -> Lang.get("start")
+                "⏹" -> Lang.get("stop")
+                "+" -> Lang.get("add_target")
+                "−" -> Lang.get("remove_target")
+                "⚙" -> Lang.get("settings")
+                "✕" -> Lang.get("close")
+                else -> text
+            }
+            if (onClick != null) setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                onClick()
+            }
             setOnTouchListener { _, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> animate().scaleX(0.84f).scaleY(0.84f).setDuration(80).start()
@@ -690,10 +795,21 @@ class FloatingOverlayService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification =
-        NotificationCompat.Builder(this, "overlay_channel")
+    private fun buildNotification(): Notification {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(this, "overlay_channel")
             .setContentTitle(Lang.get("notif_channel"))
             .setContentText(Lang.get("notif_text"))
             .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true).build()
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setContentIntent(pendingIntent)
+            .build()
+    }
 }
