@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Auto Clicker</string>
+    <string name="accessibility_service_description">Bu servis, belirlediğiniz aralıklarla ekrana otomatik tıklama yapar.</string>
+    <string name="accessibility_service_label">Auto Clicker Servisi</string>
+</resources>
