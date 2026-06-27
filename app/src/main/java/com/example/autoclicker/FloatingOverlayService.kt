@@ -10,7 +10,9 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import androidx.core.app.NotificationCompat
@@ -72,7 +74,7 @@ class FloatingOverlayService : Service() {
         startBtn.setOnClickListener {
             val s = AutoClickerAccessibilityService.instance
             if (s == null) {
-                Toast.makeText(this, "Servis bağlı değil", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, Lang.get("service_disconnected"), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
                 if (AutoClickerAccessibilityService.isRunning) {
@@ -80,7 +82,7 @@ class FloatingOverlayService : Service() {
                     AutoClickerViewModel._isClicking.value = false
                     panelDraggable = true
                     showTargetMarkers()
-                    Toast.makeText(this, "Durduruldu", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, Lang.get("service_stopped"), Toast.LENGTH_SHORT).show()
                 } else {
                     val raw = AutoClickerViewModel._intervalValue.value
                     val unit = AutoClickerViewModel._intervalUnit.value
@@ -96,7 +98,7 @@ class FloatingOverlayService : Service() {
                     AutoClickerAccessibilityService.stopUnit = AutoClickerViewModel._stopUnit.value
                     panelDraggable = false
                     removeAllTargetMarkers()
-                Toast.makeText(this, "Başlatıldı", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, Lang.get("service_started"), Toast.LENGTH_SHORT).show()
                 s.startClicking()
                 AutoClickerViewModel._isClicking.value = true
             }
@@ -121,7 +123,7 @@ class FloatingOverlayService : Service() {
 
         // Click counter
         val clickCountText = TextView(this).apply {
-            text = "0 tık"
+            text = Lang.clickCount(0)
             setTextColor(c(0x90, 0xA4, 0xAE))
             textSize = 10f
             gravity = Gravity.CENTER_HORIZONTAL
@@ -133,7 +135,7 @@ class FloatingOverlayService : Service() {
 
         if (isMulti) {
             targetCountText = TextView(this).apply {
-                text = "${AutoClickerViewModel._targets.value.size} hedef"
+                text = Lang.targetCount(AutoClickerViewModel._targets.value.size)
                 setTextColor(c(0x90, 0xA4, 0xAE))
                 textSize = 10f
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -173,7 +175,7 @@ class FloatingOverlayService : Service() {
                 if (AutoClickerAccessibilityService.isRunning) {
                     startBtn.text = "⏹"
                     startBtn.background = roundedBg(c(0xE5, 0x39, 0x35), dp(10))
-                    clickCountText.text = "${AutoClickerAccessibilityService.clickCount} tık"
+                    clickCountText.text = Lang.clickCount(AutoClickerAccessibilityService.clickCount)
                 } else {
                     startBtn.text = "▶"
                     startBtn.background = roundedBg(c(0x43, 0xA0, 0x47), dp(10))
@@ -329,7 +331,7 @@ class FloatingOverlayService : Service() {
     }
 
     private fun updateTargetCount() {
-        targetCountText?.text = "${AutoClickerViewModel._targets.value.size} hedef"
+        targetCountText?.text = Lang.targetCount(AutoClickerViewModel._targets.value.size)
     }
 
     // ──────────────────────────────────────────────
@@ -376,7 +378,7 @@ class FloatingOverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(20) }
         }
         header.addView(TextView(ctx).apply {
-            text = "Ayarlar"
+            text = Lang.get("settings")
             setTextColor(Color.WHITE); textSize = 20f; typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
@@ -388,7 +390,7 @@ class FloatingOverlayService : Service() {
         content.addView(header)
 
         // ── Tıklama Aralığı ──
-        content.addView(settingsLabel("Tıklama Aralığı"))
+        content.addView(settingsLabel(Lang.get("settings_interval")))
         val intervalCard = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             background = roundedBg(c(0x2A, 0x2A, 0x2A), dp(12))
@@ -403,7 +405,7 @@ class FloatingOverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, dp(38), 1f)
             gravity = Gravity.CENTER_VERTICAL
             setHintTextColor(c(0x90, 0xA4, 0xAE))
-            hint = "değer"
+            hint = Lang.get("hint_value")
         }
         intervalCard.addView(intervalEt)
         intervalCard.addView(unitToggleBtn(
@@ -419,15 +421,14 @@ class FloatingOverlayService : Service() {
             it.text = when (next) { TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk" }
         })
         content.addView(intervalCard)
-        intervalEt.setOnEditorActionListener { _, _, _ ->
-            intervalEt.text.toString().toLongOrNull()?.let { AutoClickerViewModel.setIntervalValue(it) }; true
-        }
-        intervalEt.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) intervalEt.text.toString().toLongOrNull()?.let { AutoClickerViewModel.setIntervalValue(it) }
-        }
+        intervalEt.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: Editable?) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { s.toString().toLongOrNull()?.let { AutoClickerViewModel.setIntervalValue(it) } }
+        })
 
         // ── Durdurma ──
-        content.addView(settingsLabel("Durdurma"))
+        content.addView(settingsLabel(Lang.get("settings_stop")))
 
         val stopCard = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -449,7 +450,7 @@ class FloatingOverlayService : Service() {
         }
 
         // Indefinite
-        stopCard.addView(stopRow("Süresiz", AutoClickerViewModel._stopCondition.value == StopCondition.INDEFINITE) {
+        stopCard.addView(stopRow(Lang.get("settings_indefinite"), AutoClickerViewModel._stopCondition.value == StopCondition.INDEFINITE) {
             AutoClickerViewModel.setStopCondition(StopCondition.INDEFINITE); refreshStopCard()
         })
 
@@ -461,10 +462,13 @@ class FloatingOverlayService : Service() {
             setOnClickListener { AutoClickerViewModel.setStopCondition(StopCondition.TIME); refreshStopCard() }
         }
         timeRow.addView(RadioButton(ctx).apply { isChecked = AutoClickerViewModel._stopCondition.value == StopCondition.TIME; isEnabled = false })
-        timeRow.addView(TextView(ctx).apply { text = "Zaman: "; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER_VERTICAL })
+        timeRow.addView(TextView(ctx).apply { text = "${Lang.get("settings_time")}: "; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER_VERTICAL })
         val timeEt = numberEditText(AutoClickerViewModel._stopValue.value.toString(), dp(64))
-        timeEt.setOnEditorActionListener { _, _, _ -> timeEt.text.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) }; true }
-        timeEt.setOnFocusChangeListener { _, h -> if (!h) timeEt.text.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) } }
+        timeEt.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: Editable?) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { s.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) } }
+        })
         timeRow.addView(timeEt)
         timeRow.addView(unitToggleBtn(
             when (AutoClickerViewModel._stopUnit.value) { TimeUnit.MILLISECONDS -> "ms"; TimeUnit.SECONDS -> "sn"; TimeUnit.MINUTES -> "dk" }
@@ -485,10 +489,13 @@ class FloatingOverlayService : Service() {
             setOnClickListener { AutoClickerViewModel.setStopCondition(StopCondition.COUNT); refreshStopCard() }
         }
         countRow.addView(RadioButton(ctx).apply { isChecked = AutoClickerViewModel._stopCondition.value == StopCondition.COUNT; isEnabled = false })
-        countRow.addView(TextView(ctx).apply { text = "Tıklama: "; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER_VERTICAL })
+        countRow.addView(TextView(ctx).apply { text = "${Lang.get("settings_clicks")}: "; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER_VERTICAL })
         val countEt = numberEditText(AutoClickerViewModel._stopValue.value.toString(), dp(72))
-        countEt.setOnEditorActionListener { _, _, _ -> countEt.text.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) }; true }
-        countEt.setOnFocusChangeListener { _, h -> if (!h) countEt.text.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) } }
+        countEt.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: Editable?) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { s.toString().toLongOrNull()?.let { AutoClickerViewModel.setStopValue(it) } }
+        })
         countRow.addView(countEt)
         if (AutoClickerViewModel._stopCondition.value == StopCondition.COUNT) countRow.background = roundedBg(c(0x15, 0x65, 0xC0, 60), dp(10))
         stopCard.addView(countRow)
@@ -497,7 +504,7 @@ class FloatingOverlayService : Service() {
 
         // ── Pozisyon (single target only) ──
         if (!isMulti) {
-            content.addView(settingsLabel("Hedef Pozisyon"))
+            content.addView(settingsLabel(Lang.get("settings_position")))
             val posCard = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 background = roundedBg(c(0x2A, 0x2A, 0x2A), dp(12))
@@ -520,7 +527,7 @@ class FloatingOverlayService : Service() {
             xEt.setOnEditorActionListener { _, _, _ -> xEt.text.toString().toFloatOrNull()?.let { AutoClickerAccessibilityService.clickX = it; AutoClickerViewModel._clickX.value = xEt.text.toString() }; false }
             yEt.setOnEditorActionListener { _, _, _ -> yEt.text.toString().toFloatOrNull()?.let { AutoClickerAccessibilityService.clickY = it; AutoClickerViewModel._clickY.value = yEt.text.toString() }; false }
             posCard.addView(TextView(ctx).apply {
-                text = "Hedef işaretini sürükleyin"
+                text = Lang.get("settings_drag")
                 setTextColor(c(0x90, 0xA4, 0xAE)); textSize = 11f
             })
             content.addView(posCard)
@@ -678,15 +685,15 @@ class FloatingOverlayService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel("overlay_channel", "Auto Clicker", NotificationManager.IMPORTANCE_LOW)
+            val ch = NotificationChannel("overlay_channel", Lang.get("notif_channel"), NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
         }
     }
 
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, "overlay_channel")
-            .setContentTitle("Auto Clicker")
-            .setContentText("Overlay aktif")
+            .setContentTitle(Lang.get("notif_channel"))
+            .setContentText(Lang.get("notif_text"))
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true).build()
 }

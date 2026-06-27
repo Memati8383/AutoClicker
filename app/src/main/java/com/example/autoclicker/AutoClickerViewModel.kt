@@ -32,12 +32,20 @@ class AutoClickerViewModel(private val context: Context) {
         fun initTheme(context: Context) {
             val prefs = context.getSharedPreferences("autoclicker", Context.MODE_PRIVATE)
             _isDarkTheme.value = prefs.getBoolean("dark_theme", true)
+            Lang.setLang(prefs.getString("lang", "tr") ?: "tr")
         }
 
         fun toggleTheme(context: Context) {
             _isDarkTheme.value = !_isDarkTheme.value
             context.getSharedPreferences("autoclicker", Context.MODE_PRIVATE)
                 .edit().putBoolean("dark_theme", _isDarkTheme.value).apply()
+            (context as? Activity)?.recreate()
+        }
+
+        fun toggleLang(context: Context) {
+            Lang.toggle()
+            context.getSharedPreferences("autoclicker", Context.MODE_PRIVATE)
+                .edit().putString("lang", Lang.current).apply()
             (context as? Activity)?.recreate()
         }
 

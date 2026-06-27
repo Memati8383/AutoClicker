@@ -108,10 +108,10 @@ class AutoClickerAccessibilityService : AccessibilityService() {
 
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription) {
-                if (clickCount == 1) android.widget.Toast.makeText(this@AutoClickerAccessibilityService, "✓ tık #1 ($x,$y)", android.widget.Toast.LENGTH_SHORT).show()
+                if (clickCount == 1) android.widget.Toast.makeText(this@AutoClickerAccessibilityService, "✓ ${Lang.get("click")} #1 ($x,$y)", android.widget.Toast.LENGTH_SHORT).show()
             }
             override fun onCancelled(gestureDescription: GestureDescription) {
-                android.widget.Toast.makeText(this@AutoClickerAccessibilityService, "✗ tık iptal! Servis sorunu", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(this@AutoClickerAccessibilityService, "✗ ${Lang.get("click_cancelled")}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }, null)
     }
